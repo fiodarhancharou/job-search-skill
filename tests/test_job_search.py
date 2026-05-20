@@ -226,3 +226,59 @@ def test_search_linkedin_jobs_handles_pause_turn():
 
     assert mock_client.messages.create.call_count == 2
     assert isinstance(results, list)
+
+
+from datetime import date
+
+
+def _make_evaluation_result(tier: str, title: str = "Senior AI Eng", company: str = "Acme"):
+    from job_search import EvaluationResult, JobListing
+    job = JobListing(
+        title=title, company=company, location="Remote", salary="25000 PLN",
+        description="AI role.", url=f"https://linkedin.com/jobs/view/{abs(hash(title)) % 9999}",
+    )
+    return EvaluationResult(
+        job=job,
+        tier=tier,
+        matched_required=["Python proficiency expected", "LLM/AI/ML focus"],
+        matched_preferred=["RAG or agentic systems"] if tier != "Skip" else [],
+        deal_breakers_hit=["B2B-only contract"] if tier == "Skip" else [],
+        reasoning="Test reasoning sentence one. Test reasoning sentence two.",
+    )
+
+
+def test_generate_report_creates_file(tmp_path):
+    from job_search import generate_report
+    results = [
+        _make_evaluation_result("Strong Match", "LLM Lead", "BigCo"),
+        _make_evaluation_result("Possible", "ML Engineer", "SmallCo"),
+        _make_evaluation_result("Skip", "Data Analyst", "BadCo"),
+    ]
+    run_date = date(2026, 5, 20)
+    report_path = generate_report(results, reports_dir=tmp_path, run_date=run_date)
+    assert report_path.exists()
+    assert report_path.name == "job-search-2026-05-20.md"
+
+
+def test_generate_report_content_structure(tmp_path):
+    from job_search import generate_report
+    results = [
+        _make_evaluation_result("Strong Match", "LLM Lead", "BigCo"),
+        _make_evaluation_result("Possible", "ML Engineer", "SmallCo"),
+        _make_evaluation_result("Skip", "Data Analyst", "BadCo"),
+    ]
+    run_date = date(2026, 5, 20)
+    report_path = generate_report(results, reports_dir=tmp_path, run_date=run_date)
+    content = report_path.read_text(encoding="utf-8")
+
+    assert "# Job Search Report" in content
+    assert "## Summary" in content
+    assert "Strong Match: 1" in content
+    assert "Possible: 1" in content
+    assert "Skip: 1" in content
+    assert "## Strong Match" in content
+    assert "## Possible" in content
+    assert "## Skip" in content
+    assert "LLM Lead" in content
+    assert "ML Engineer" in content
+    assert "Data Analyst" in content

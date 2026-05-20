@@ -3,6 +3,7 @@ import anthropic
 import json
 import re
 from dataclasses import dataclass, field
+from datetime import date as date_type
 from pathlib import Path
 import yaml
 
@@ -178,3 +179,60 @@ def search_linkedin_jobs(query: str, max_results: int = 10) -> list[JobListing]:
         text_blocks = [b.text for b in response.content if b.type == "text"]
         full_text = "\n\n".join(text_blocks)
         return _parse_job_listings_from_text(full_text)
+
+
+def generate_report(
+    results: list[EvaluationResult],
+    reports_dir=None,
+    run_date=None,
+) -> Path:
+    if reports_dir is None:
+        reports_dir = Path(__file__).parent / "reports"
+    reports_dir = Path(reports_dir)
+    reports_dir.mkdir(parents=True, exist_ok=True)
+
+    if run_date is None:
+        run_date = date_type.today()
+
+    filename = f"job-search-{run_date.strftime('%Y-%m-%d')}.md"
+    report_path = reports_dir / filename
+
+    strong = [r for r in results if r.tier == "Strong Match"]
+    possible = [r for r in results if r.tier == "Possible"]
+    skip = [r for r in results if r.tier == "Skip"]
+
+    lines = [
+        f"# Job Search Report — {run_date.strftime('%Y-%m-%d')}",
+        "",
+        "## Summary",
+        f"- Evaluated: {len(results)} listings",
+        f"- Strong Match: {len(strong)} | Possible: {len(possible)} | Skip: {len(skip)}",
+        "",
+        "---",
+    ]
+
+    def render_section(section_results: list[EvaluationResult], heading: str) -> list[str]:
+        out = ["", f"## {heading}", ""]
+        if not section_results:
+            out.append("_None_")
+            return out
+        for i, r in enumerate(section_results, 1):
+            out += [
+                f"### {i}. {r.job.title} — {r.job.company}",
+                f"- **URL**: {r.job.url}",
+                f"- **Location**: {r.job.location}",
+                f"- **Salary**: {r.job.salary}",
+                f"- **Matched required**: {', '.join(r.matched_required) or 'None'}",
+                f"- **Matched preferred**: {', '.join(r.matched_preferred) or 'None'}",
+            ]
+            if r.deal_breakers_hit:
+                out.append(f"- **Deal-breakers hit**: {', '.join(r.deal_breakers_hit)}")
+            out += [f"- **Why**: {r.reasoning}", ""]
+        return out
+
+    lines += render_section(strong, "Strong Match")
+    lines += render_section(possible, "Possible")
+    lines += render_section(skip, "Skip")
+
+    report_path.write_text("\n".join(lines), encoding="utf-8")
+    return report_path
