@@ -6,8 +6,7 @@ description: Search LinkedIn for Senior AI/ML Engineer job listings matching you
 Run the job search pipeline:
 
 ```bash
-cd /Users/Fiodar_Hancharou/Desktop/work/personal/eval_example
-python job_search.py
+python3 job_search.py
 ```
 
 The script reads `config.yaml` for all search queries and evaluation criteria, then writes a ranked report to `reports/job-search-YYYY-MM-DD.md`.
