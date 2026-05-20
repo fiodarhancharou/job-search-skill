@@ -1,4 +1,7 @@
 # job_search.py
+from dotenv import load_dotenv
+load_dotenv()
+
 import anthropic
 import json
 import re
