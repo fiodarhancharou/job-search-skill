@@ -77,7 +77,10 @@ def evaluate_job(
     )
 
     text = next(b.text for b in response.content if b.type == "text")
-    data = json.loads(text)
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Evaluation response was not valid JSON for {job.url}: {e}\nResponse: {text[:200]}") from e
 
     return EvaluationResult(
         job=job,
@@ -185,6 +188,8 @@ def generate_report(
     results: list[EvaluationResult],
     reports_dir=None,
     run_date=None,
+    searched_queries: int = 0,
+    found_count: int = 0,
 ) -> Path:
     if reports_dir is None:
         reports_dir = Path(__file__).parent / "reports"
@@ -205,7 +210,7 @@ def generate_report(
         f"# Job Search Report — {run_date.strftime('%Y-%m-%d')}",
         "",
         "## Summary",
-        f"- Evaluated: {len(results)} listings",
+        f"- Searched: {searched_queries} queries | Found: {found_count} listings | Evaluated: {len(results)}",
         f"- Strong Match: {len(strong)} | Possible: {len(possible)} | Skip: {len(skip)}",
         "",
         "---",
@@ -264,7 +269,12 @@ def main(reports_dir=None) -> Path:
         result = evaluate_job(job, config)
         results.append(result)
 
-    report_path = generate_report(results, reports_dir=reports_dir)
+    report_path = generate_report(
+        results,
+        reports_dir=reports_dir,
+        searched_queries=len(queries),
+        found_count=len(all_jobs),
+    )
     strong = sum(1 for r in results if r.tier == "Strong Match")
     possible = sum(1 for r in results if r.tier == "Possible")
     skip = sum(1 for r in results if r.tier == "Skip")
