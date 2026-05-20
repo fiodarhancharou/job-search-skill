@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import yaml
 
+_LINKEDIN_URL_PATTERN = re.compile(r"https?://(?:www\.)?linkedin\.com/jobs/view/\S+")
+
 
 @dataclass
 class JobListing:
@@ -88,11 +90,10 @@ def evaluate_job(
 
 def _parse_job_listings_from_text(text: str) -> list[JobListing]:
     listings = []
-    url_pattern = re.compile(r"https?://(?:www\.)?linkedin\.com/jobs/view/\S+")
     blocks = re.split(r"\n\s*\n", text.strip())
 
     for block in blocks:
-        urls = url_pattern.findall(block)
+        urls = _LINKEDIN_URL_PATTERN.findall(block)
         if not urls:
             continue
         url = urls[0].rstrip(".,)")
