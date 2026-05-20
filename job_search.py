@@ -5,12 +5,27 @@ load_dotenv()
 import anthropic
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import date as date_type
 from pathlib import Path
 import yaml
 
 _LINKEDIN_URL_PATTERN = re.compile(r"https?://(?:www\.)?linkedin\.com/jobs/view/\S+")
+_RETRY_DELAYS = [5, 15, 30]  # seconds between retries on 529
+
+
+def _messages_create_with_retry(client: anthropic.Anthropic, **kwargs):
+    for delay in _RETRY_DELAYS:
+        try:
+            return client.messages.create(**kwargs)
+        except anthropic.APIStatusError as e:
+            if e.status_code == 529:
+                print(f"  API overloaded (529), retrying in {delay}s…")
+                time.sleep(delay)
+            else:
+                raise
+    return client.messages.create(**kwargs)
 
 
 @dataclass
@@ -73,7 +88,8 @@ def evaluate_job(
     )
 
     client = anthropic.Anthropic()
-    response = client.messages.create(
+    response = _messages_create_with_retry(
+        client,
         model="claude-opus-4-7",
         max_tokens=1024,
         messages=[{"role": "user", "content": prompt}],
@@ -163,7 +179,8 @@ def search_linkedin_jobs(query: str, max_results: int = 10) -> list[JobListing]:
     ]
 
     while True:
-        response = client.messages.create(
+        response = _messages_create_with_retry(
+            client,
             model="claude-opus-4-7",
             max_tokens=4096,
             tools=[{"type": "web_search_20260209", "name": "web_search"}],
