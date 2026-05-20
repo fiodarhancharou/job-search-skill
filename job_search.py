@@ -1,6 +1,27 @@
 # job_search.py
+from dataclasses import dataclass, field
 from pathlib import Path
 import yaml
+
+
+@dataclass
+class JobListing:
+    title: str
+    company: str
+    location: str
+    salary: str
+    description: str
+    url: str
+
+
+@dataclass
+class EvaluationResult:
+    job: JobListing
+    tier: str  # "Strong Match" | "Possible" | "Skip"
+    matched_required: list[str] = field(default_factory=list)
+    matched_preferred: list[str] = field(default_factory=list)
+    deal_breakers_hit: list[str] = field(default_factory=list)
+    reasoning: str = ""
 
 
 def load_config() -> dict:

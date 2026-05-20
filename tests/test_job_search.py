@@ -40,3 +40,41 @@ def test_load_config_search_has_queries():
     config = load_config()
     assert len(config["search"]["queries"]) > 0
     assert config["search"]["max_results_per_query"] > 0
+
+
+def test_job_listing_dataclass():
+    from job_search import JobListing
+    job = JobListing(
+        title="Senior AI Engineer",
+        company="Acme Corp",
+        location="Remote, Poland",
+        salary="25000 PLN",
+        description="We build LLM-powered products.",
+        url="https://linkedin.com/jobs/view/12345",
+    )
+    assert job.title == "Senior AI Engineer"
+    assert job.url == "https://linkedin.com/jobs/view/12345"
+    assert job.salary == "25000 PLN"
+
+
+def test_evaluation_result_dataclass():
+    from job_search import EvaluationResult, JobListing
+    job = JobListing(
+        title="Senior ML Engineer",
+        company="Beta Inc",
+        location="Krakow (hybrid)",
+        salary="Not listed",
+        description="ML platform role.",
+        url="https://linkedin.com/jobs/view/99999",
+    )
+    result = EvaluationResult(
+        job=job,
+        tier="Strong Match",
+        matched_required=["Python proficiency expected", "LLM/AI/ML focus"],
+        matched_preferred=["RAG or agentic systems", "AWS or Azure cloud", "FastAPI"],
+        deal_breakers_hit=[],
+        reasoning="Matches all required and 3 preferred. No deal-breakers.",
+    )
+    assert result.tier == "Strong Match"
+    assert len(result.matched_preferred) == 3
+    assert result.deal_breakers_hit == []
