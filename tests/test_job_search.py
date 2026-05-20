@@ -282,3 +282,30 @@ def test_generate_report_content_structure(tmp_path):
     assert "LLM Lead" in content
     assert "ML Engineer" in content
     assert "Data Analyst" in content
+
+
+def test_main_produces_report_file(tmp_path):
+    from job_search import main, JobListing, EvaluationResult
+
+    fake_jobs = [
+        JobListing("Senior AI Engineer", "TechCo", "Remote", "26000 PLN", "LLM role.", "https://linkedin.com/jobs/view/1"),
+    ]
+    fake_eval = EvaluationResult(
+        job=fake_jobs[0],
+        tier="Strong Match",
+        matched_required=["Python proficiency expected", "LLM/AI/ML focus (not generic backend)", "Senior level (5+ years implied or stated)"],
+        matched_preferred=["RAG or agentic systems experience valued", "AWS or Azure cloud", "FastAPI or backend Python stack"],
+        deal_breakers_hit=[],
+        reasoning="All required met, three preferred met.",
+    )
+
+    with patch("job_search.search_linkedin_jobs", return_value=fake_jobs) as mock_search, \
+         patch("job_search.evaluate_job", return_value=fake_eval) as mock_eval:
+        report_path = main(reports_dir=tmp_path)
+
+    assert report_path.exists()
+    assert mock_search.call_count >= 1
+    assert mock_eval.call_count >= 1
+    content = report_path.read_text()
+    assert "Strong Match" in content
+    assert "TechCo" in content

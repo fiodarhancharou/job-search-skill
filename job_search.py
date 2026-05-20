@@ -236,3 +236,42 @@ def generate_report(
 
     report_path.write_text("\n".join(lines), encoding="utf-8")
     return report_path
+
+
+def main(reports_dir=None) -> Path:
+    config = load_config()
+    queries = config["search"]["queries"]
+    max_per_query = config["search"]["max_results_per_query"]
+
+    all_jobs: list[JobListing] = []
+    for query in queries:
+        print(f"Searching: {query}")
+        jobs = search_linkedin_jobs(query, max_results=max_per_query)
+        print(f"  Found {len(jobs)} listings")
+        all_jobs.extend(jobs)
+
+    seen_urls: set[str] = set()
+    unique_jobs = []
+    for job in all_jobs:
+        if job.url not in seen_urls:
+            seen_urls.add(job.url)
+            unique_jobs.append(job)
+
+    print(f"\nEvaluating {len(unique_jobs)} unique listings...")
+    results: list[EvaluationResult] = []
+    for job in unique_jobs:
+        print(f"  Evaluating: {job.title} at {job.company}")
+        result = evaluate_job(job, config)
+        results.append(result)
+
+    report_path = generate_report(results, reports_dir=reports_dir)
+    strong = sum(1 for r in results if r.tier == "Strong Match")
+    possible = sum(1 for r in results if r.tier == "Possible")
+    skip = sum(1 for r in results if r.tier == "Skip")
+    print(f"\nReport written to: {report_path}")
+    print(f"Strong Match: {strong} | Possible: {possible} | Skip: {skip}")
+    return report_path
+
+
+if __name__ == "__main__":
+    main()
