@@ -164,3 +164,65 @@ def test_evaluate_job_skip_on_deal_breaker():
 
     assert result.tier == "Skip"
     assert len(result.deal_breakers_hit) == 2
+
+
+def _make_search_response(text_content: str, stop_reason: str = "end_turn"):
+    content_block = MagicMock()
+    content_block.type = "text"
+    content_block.text = text_content
+    response = MagicMock()
+    response.stop_reason = stop_reason
+    response.content = [content_block]
+    return response
+
+
+def test_search_linkedin_jobs_returns_list_of_job_listings():
+    from job_search import search_linkedin_jobs, JobListing
+    search_text = """
+    Found these LinkedIn job listings:
+
+    1. Senior AI Engineer at DataCo
+    URL: https://www.linkedin.com/jobs/view/111
+    Location: Remote, Poland
+    Salary: 26000 PLN/month
+    Description: Build AI pipelines with Python and LLMs. Senior role, UoP contract, remote-first team.
+
+    2. Senior ML Engineer at MLStartup
+    URL: https://www.linkedin.com/jobs/view/222
+    Location: Krakow (hybrid)
+    Salary: Not listed
+    Description: ML research and deployment. RAG, agentic systems, AWS. English-speaking team.
+    """
+    mock_response = _make_search_response(search_text)
+
+    with patch("job_search.anthropic.Anthropic") as MockClient:
+        mock_client = MagicMock()
+        MockClient.return_value = mock_client
+        mock_client.messages.create.return_value = mock_response
+
+        results = search_linkedin_jobs("Senior AI Engineer remote Poland LinkedIn", max_results=10)
+
+    assert isinstance(results, list)
+    assert len(results) >= 1
+    assert all(isinstance(j, JobListing) for j in results)
+    assert all(j.url.startswith("https://") for j in results)
+
+
+def test_search_linkedin_jobs_handles_pause_turn():
+    from job_search import search_linkedin_jobs
+    pause_response = MagicMock()
+    pause_response.stop_reason = "pause_turn"
+    pause_response.content = []
+
+    final_text = "1. Senior LLM Engineer at Acme\nURL: https://linkedin.com/jobs/view/333\nLocation: Remote\nSalary: 24000 PLN\nDescription: LLM work."
+    final_response = _make_search_response(final_text)
+
+    with patch("job_search.anthropic.Anthropic") as MockClient:
+        mock_client = MagicMock()
+        MockClient.return_value = mock_client
+        mock_client.messages.create.side_effect = [pause_response, final_response]
+
+        results = search_linkedin_jobs("Senior LLM Engineer hybrid Krakow", max_results=5)
+
+    assert mock_client.messages.create.call_count == 2
+    assert isinstance(results, list)

@@ -1,6 +1,7 @@
 # job_search.py
 import anthropic
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 import yaml
@@ -83,3 +84,96 @@ def evaluate_job(
         deal_breakers_hit=data.get("deal_breakers_hit", []),
         reasoning=data.get("reasoning", ""),
     )
+
+
+def _parse_job_listings_from_text(text: str) -> list[JobListing]:
+    listings = []
+    url_pattern = re.compile(r"https?://(?:www\.)?linkedin\.com/jobs/view/\S+")
+    blocks = re.split(r"\n\s*\n", text.strip())
+
+    for block in blocks:
+        urls = url_pattern.findall(block)
+        if not urls:
+            continue
+        url = urls[0].rstrip(".,)")
+        lines = [l.strip() for l in block.strip().splitlines() if l.strip()]
+
+        title = "Unknown Title"
+        company = "Unknown Company"
+        location = "Not listed"
+        salary = "Not listed"
+        desc_lines = []
+
+        for line in lines:
+            low = line.lower()
+            if low.startswith("url:") or "linkedin.com/jobs" in low:
+                continue
+            elif low.startswith("location:"):
+                location = line.split(":", 1)[1].strip()
+            elif low.startswith("salary:"):
+                salary = line.split(":", 1)[1].strip()
+            elif low.startswith("description:"):
+                desc_lines.append(line.split(":", 1)[1].strip())
+            elif " at " in line and title == "Unknown Title":
+                parts = line.split(" at ", 1)
+                title = re.sub(r"^\d+\.\s*", "", parts[0]).strip()
+                company = parts[1].strip()
+            else:
+                desc_lines.append(line)
+
+        description = " ".join(desc_lines) if desc_lines else "No description extracted."
+        listings.append(JobListing(
+            title=title,
+            company=company,
+            location=location,
+            salary=salary,
+            description=description,
+            url=url,
+        ))
+
+    return listings
+
+
+def search_linkedin_jobs(query: str, max_results: int = 10) -> list[JobListing]:
+    client = anthropic.Anthropic()
+    messages = [
+        {
+            "role": "user",
+            "content": (
+                f"Search LinkedIn for job listings matching this query: '{query}'. "
+                f"Find up to {max_results} real job postings. "
+                "For each listing return: the job title, company name, location, salary (or 'Not listed'), "
+                "a brief description of the role and requirements, and the full LinkedIn job URL. "
+                "Format each listing as:\n"
+                "N. [Title] at [Company]\n"
+                "URL: [linkedin url]\n"
+                "Location: [location]\n"
+                "Salary: [salary or Not listed]\n"
+                "Description: [brief description]\n"
+            ),
+        }
+    ]
+
+    while True:
+        response = client.messages.create(
+            model="claude-opus-4-7",
+            max_tokens=4096,
+            tools=[{"type": "web_search_20260209", "name": "web_search"}],
+            messages=messages,
+        )
+
+        if response.stop_reason == "end_turn":
+            text_blocks = [b.text for b in response.content if b.type == "text"]
+            full_text = "\n\n".join(text_blocks)
+            return _parse_job_listings_from_text(full_text)
+
+        if response.stop_reason == "pause_turn":
+            messages = messages + [
+                {"role": "assistant", "content": response.content},
+                {"role": "user", "content": "Please continue."},
+            ]
+            continue
+
+        text_blocks = [b.text for b in response.content if b.type == "text"]
+        full_text = "\n\n".join(text_blocks)
+        return _parse_job_listings_from_text(full_text)
