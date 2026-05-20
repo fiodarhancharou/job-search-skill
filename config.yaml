@@ -1,0 +1,35 @@
+profile:
+  target_roles:
+    - "Senior AI Engineer"
+    - "Senior ML Engineer"
+    - "Senior LLM Engineer"
+    - "AI Tech Lead"
+  location: "remote or hybrid Krakow Poland"
+  salary_min_pln: 24000
+  contract_type: "UoP"
+
+required_criteria:
+  - Python proficiency expected
+  - LLM/AI/ML focus (not generic backend)
+  - Senior level (5+ years implied or stated)
+
+preferred_criteria:
+  - RAG or agentic systems experience valued
+  - AWS or Azure cloud
+  - FastAPI or backend Python stack
+  - Evaluation/observability tooling (Langfuse, MLflow, etc.)
+  - English-language team
+
+deal_breakers:
+  - Requires relocation to office full-time
+  - Requires security clearance
+  - Junior or mid-level role disguised as senior
+  - Non-AI/ML role (pure backend, DevOps, data analyst, etc.)
+  - B2B-only contract (no UoP option)
+
+search:
+  queries:
+    - "Senior AI Engineer remote Poland LinkedIn"
+    - "Senior LLM Engineer hybrid Krakow"
+    - "Senior ML Engineer RAG agentic remote Europe"
+  max_results_per_query: 10
