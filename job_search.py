@@ -13,7 +13,7 @@ from pathlib import Path
 import yaml
 
 _LINKEDIN_URL_PATTERN = re.compile(r"https?://(?:www\.)?linkedin\.com/jobs/view/\S+")
-_RETRY_DELAYS = [5, 15, 30]  # seconds between retries on 529
+_RETRY_DELAYS = [5, 15, 30, 60, 120]  # seconds between retries on 529
 _MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-4-7")
 
 
@@ -22,8 +22,8 @@ def _messages_create_with_retry(client: anthropic.Anthropic, **kwargs):
         try:
             return client.messages.create(**kwargs)
         except anthropic.APIStatusError as e:
-            if e.status_code == 529:
-                print(f"  API overloaded (529), retrying in {delay}s…")
+            if e.status_code in (429, 529):
+                print(f"  API error ({e.status_code}), retrying in {delay}s…")
                 time.sleep(delay)
             else:
                 raise
