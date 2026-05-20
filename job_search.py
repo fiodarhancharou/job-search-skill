@@ -98,8 +98,13 @@ def evaluate_job(
     )
 
     text = next(b.text for b in response.content if b.type == "text")
+    # strip markdown fences the model sometimes adds despite instructions
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = stripped.split("\n", 1)[-1]
+        stripped = stripped.rsplit("```", 1)[0].strip()
     try:
-        data = json.loads(text)
+        data = json.loads(stripped)
     except json.JSONDecodeError as e:
         raise ValueError(f"Evaluation response was not valid JSON for {job.url}: {e}\nResponse: {text[:200]}") from e
 
