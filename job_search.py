@@ -270,18 +270,58 @@ def generate_report(
     return report_path
 
 
-def main(reports_dir=None) -> Path:
+def _cache_path(base_dir: Path = None) -> Path:
+    base = Path(base_dir) if base_dir else Path(__file__).parent / "cache"
+    base.mkdir(parents=True, exist_ok=True)
+    return base / f"{date_type.today().strftime('%Y-%m-%d')}.json"
+
+
+def _load_cache(path: Path) -> dict:
+    if path.exists():
+        return json.loads(path.read_text(encoding="utf-8"))
+    return {"searches": {}, "evaluations": {}}
+
+
+def _save_cache(path: Path, cache: dict) -> None:
+    path.write_text(json.dumps(cache, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _job_to_dict(job: JobListing) -> dict:
+    return {"title": job.title, "company": job.company, "location": job.location,
+            "salary": job.salary, "description": job.description, "url": job.url}
+
+
+def _job_from_dict(d: dict) -> JobListing:
+    return JobListing(**d)
+
+
+def _eval_to_dict(r: EvaluationResult) -> dict:
+    return {"tier": r.tier, "matched_required": r.matched_required,
+            "matched_preferred": r.matched_preferred, "deal_breakers_hit": r.deal_breakers_hit,
+            "reasoning": r.reasoning}
+
+
+def main(reports_dir=None, cache_dir=None) -> Path:
     config = load_config()
     queries = config["search"]["queries"]
     max_per_query = config["search"]["max_results_per_query"]
 
+    cache_file = _cache_path(cache_dir)
+    cache = _load_cache(cache_file)
+
     all_jobs: list[JobListing] = []
     for i, query in enumerate(queries):
-        if i > 0:
-            time.sleep(20)
-        print(f"Searching: {query}")
-        jobs = search_linkedin_jobs(query, max_results=max_per_query)
-        print(f"  Found {len(jobs)} listings")
+        if query in cache["searches"]:
+            jobs = [_job_from_dict(d) for d in cache["searches"][query]]
+            print(f"Searching: {query} (cached, {len(jobs)} listings)")
+        else:
+            if i > 0:
+                time.sleep(20)
+            print(f"Searching: {query}")
+            jobs = search_linkedin_jobs(query, max_results=max_per_query)
+            cache["searches"][query] = [_job_to_dict(j) for j in jobs]
+            _save_cache(cache_file, cache)
+            print(f"  Found {len(jobs)} listings")
         all_jobs.extend(jobs)
 
     seen_urls: set[str] = set()
@@ -294,8 +334,15 @@ def main(reports_dir=None) -> Path:
     print(f"\nEvaluating {len(unique_jobs)} unique listings...")
     results: list[EvaluationResult] = []
     for job in unique_jobs:
-        print(f"  Evaluating: {job.title} at {job.company}")
-        result = evaluate_job(job, config)
+        if job.url in cache["evaluations"]:
+            d = cache["evaluations"][job.url]
+            result = EvaluationResult(job=job, **d)
+            print(f"  Evaluating: {job.title} at {job.company} (cached, {result.tier})")
+        else:
+            print(f"  Evaluating: {job.title} at {job.company}")
+            result = evaluate_job(job, config)
+            cache["evaluations"][job.url] = _eval_to_dict(result)
+            _save_cache(cache_file, cache)
         results.append(result)
 
     report_path = generate_report(
