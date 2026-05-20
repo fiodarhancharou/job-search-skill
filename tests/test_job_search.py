@@ -1,5 +1,4 @@
 # tests/test_job_search.py
-import pytest
 from pathlib import Path
 
 
