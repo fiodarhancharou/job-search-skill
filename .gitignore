@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 reports/job-search-*.md
 cache/
+.vscode/
