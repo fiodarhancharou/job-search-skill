@@ -4,6 +4,7 @@ load_dotenv()
 
 import anthropic
 import json
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -13,6 +14,7 @@ import yaml
 
 _LINKEDIN_URL_PATTERN = re.compile(r"https?://(?:www\.)?linkedin\.com/jobs/view/\S+")
 _RETRY_DELAYS = [5, 15, 30]  # seconds between retries on 529
+_MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-4-7")
 
 
 def _messages_create_with_retry(client: anthropic.Anthropic, **kwargs):
@@ -90,7 +92,7 @@ def evaluate_job(
     client = anthropic.Anthropic()
     response = _messages_create_with_retry(
         client,
-        model="claude-opus-4-7",
+        model=_MODEL,
         max_tokens=1024,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -181,7 +183,7 @@ def search_linkedin_jobs(query: str, max_results: int = 10) -> list[JobListing]:
     while True:
         response = _messages_create_with_retry(
             client,
-            model="claude-opus-4-7",
+            model=_MODEL,
             max_tokens=4096,
             tools=[{"type": "web_search_20260209", "name": "web_search"}],
             messages=messages,
