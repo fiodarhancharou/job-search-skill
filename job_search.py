@@ -271,7 +271,9 @@ def main(reports_dir=None) -> Path:
     max_per_query = config["search"]["max_results_per_query"]
 
     all_jobs: list[JobListing] = []
-    for query in queries:
+    for i, query in enumerate(queries):
+        if i > 0:
+            time.sleep(20)
         print(f"Searching: {query}")
         jobs = search_linkedin_jobs(query, max_results=max_per_query)
         print(f"  Found {len(jobs)} listings")

@@ -32,4 +32,4 @@ search:
     - "Senior AI Engineer remote Poland LinkedIn"
     - "Senior LLM Engineer hybrid Krakow"
     - "Senior ML Engineer RAG agentic remote Europe"
-  max_results_per_query: 10
+  max_results_per_query: 5
