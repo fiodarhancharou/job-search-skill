@@ -10,18 +10,40 @@ import yaml
 _LINKEDIN_URL_PATTERN = re.compile(r"https?://(?:www\.)?linkedin\.com/jobs/view/\S+")
 
 
-def _claude_cli(prompt: str) -> str:
+_EVAL_JSON_SCHEMA = json.dumps({
+    "type": "object",
+    "properties": {
+        "tier": {"type": "string", "enum": ["Strong Match", "Possible", "Skip"]},
+        "matched_required": {"type": "array", "items": {"type": "string"}},
+        "matched_preferred": {"type": "array", "items": {"type": "string"}},
+        "deal_breakers_hit": {"type": "array", "items": {"type": "string"}},
+        "reasoning": {"type": "string"},
+    },
+    "required": ["tier", "matched_required", "matched_preferred", "deal_breakers_hit", "reasoning"],
+})
+
+
+def _claude_cli(prompt: str, tools: list[str] | None = None, json_schema: str | None = None) -> str:
     print(f"    [claude] calling CLI…")
+    cmd = ["claude", "-p", prompt]
+    if tools:
+        cmd += ["--allowedTools"] + tools
+    if json_schema:
+        cmd += ["--json-schema", json_schema, "--output-format", "json"]
     result = subprocess.run(
-        ["claude", "-p", prompt],
+        cmd,
         capture_output=True,
         text=True,
         timeout=180,
     )
     if result.returncode != 0:
         raise RuntimeError(f"claude CLI error: {result.stderr.strip()}")
-    print(f"    [claude] got {len(result.stdout)} chars")
-    return result.stdout.strip()
+    output = result.stdout.strip()
+    if json_schema:
+        parsed = json.loads(output)
+        return json.dumps(parsed["structured_output"])
+    print(f"    [claude] got {len(output)} chars")
+    return output
 
 
 @dataclass
@@ -83,8 +105,7 @@ def evaluate_job(
         deal_breakers=deal_breakers_list,
     )
 
-    text = _claude_cli(prompt)
-    # strip markdown fences the model sometimes adds despite instructions
+    text = _claude_cli(prompt, json_schema=_EVAL_JSON_SCHEMA)
     stripped = text.strip()
     if stripped.startswith("```"):
         stripped = stripped.split("\n", 1)[-1]
@@ -165,7 +186,7 @@ def search_linkedin_jobs(query: str, max_results: int = 10) -> list[JobListing]:
         "Salary: [salary or Not listed]\n"
         "Description: [brief description]\n"
     )
-    full_text = _claude_cli(prompt)
+    full_text = _claude_cli(prompt, tools=["WebSearch"])
     listings = _parse_job_listings_from_text(full_text)
     print(f"    parsed {len(listings)} listings from response")
     return listings
