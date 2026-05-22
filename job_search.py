@@ -1,33 +1,27 @@
 # job_search.py
-from dotenv import load_dotenv
-load_dotenv()
-
-import anthropic
 import json
-import os
 import re
-import time
+import subprocess
 from dataclasses import dataclass, field
 from datetime import date as date_type
 from pathlib import Path
 import yaml
 
 _LINKEDIN_URL_PATTERN = re.compile(r"https?://(?:www\.)?linkedin\.com/jobs/view/\S+")
-_RETRY_DELAYS = [5, 15, 30, 60, 120]  # seconds between retries on 529
-_MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-4-7")
 
 
-def _messages_create_with_retry(client: anthropic.Anthropic, **kwargs):
-    for delay in _RETRY_DELAYS:
-        try:
-            return client.messages.create(**kwargs)
-        except anthropic.APIStatusError as e:
-            if e.status_code in (429, 529):
-                print(f"  API error ({e.status_code}), retrying in {delay}s…")
-                time.sleep(delay)
-            else:
-                raise
-    return client.messages.create(**kwargs)
+def _claude_cli(prompt: str) -> str:
+    print(f"    [claude] calling CLI…")
+    result = subprocess.run(
+        ["claude", "-p", prompt],
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"claude CLI error: {result.stderr.strip()}")
+    print(f"    [claude] got {len(result.stdout)} chars")
+    return result.stdout.strip()
 
 
 @dataclass
@@ -89,15 +83,7 @@ def evaluate_job(
         deal_breakers=deal_breakers_list,
     )
 
-    client = anthropic.Anthropic()
-    response = _messages_create_with_retry(
-        client,
-        model=_MODEL,
-        max_tokens=1024,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    text = next(b.text for b in response.content if b.type == "text")
+    text = _claude_cli(prompt)
     # strip markdown fences the model sometimes adds despite instructions
     stripped = text.strip()
     if stripped.startswith("```"):
@@ -167,58 +153,22 @@ def _parse_job_listings_from_text(text: str) -> list[JobListing]:
 
 
 def search_linkedin_jobs(query: str, max_results: int = 10) -> list[JobListing]:
-    client = anthropic.Anthropic()
-    messages = [
-        {
-            "role": "user",
-            "content": (
-                f"Search LinkedIn for job listings matching this query: '{query}'. "
-                f"Find up to {max_results} real job postings. "
-                "For each listing return: the job title, company name, location, salary (or 'Not listed'), "
-                "a brief description of the role and requirements, and the full LinkedIn job URL. "
-                "Format each listing as:\n"
-                "N. [Title] at [Company]\n"
-                "URL: [linkedin url]\n"
-                "Location: [location]\n"
-                "Salary: [salary or Not listed]\n"
-                "Description: [brief description]\n"
-            ),
-        }
-    ]
-
-    turn = 0
-    while True:
-        turn += 1
-        print(f"    [turn {turn}] calling API…")
-        response = _messages_create_with_retry(
-            client,
-            model=_MODEL,
-            max_tokens=4096,
-            tools=[{"type": "web_search_20260209", "name": "web_search"}],
-            messages=messages,
-        )
-        tool_uses = [b for b in response.content if b.type == "tool_use"]
-        text_blocks = [b for b in response.content if b.type == "text"]
-        print(f"    [turn {turn}] stop_reason={response.stop_reason} | tool_calls={len(tool_uses)} | text_blocks={len(text_blocks)}")
-
-        if response.stop_reason == "end_turn":
-            full_text = "\n\n".join(b.text for b in text_blocks)
-            listings = _parse_job_listings_from_text(full_text)
-            print(f"    [turn {turn}] parsed {len(listings)} listings from response")
-            return listings
-
-        if response.stop_reason == "pause_turn":
-            print(f"    [turn {turn}] web search in progress, continuing…")
-            messages = messages + [
-                {"role": "assistant", "content": response.content},
-                {"role": "user", "content": "Please continue."},
-            ]
-            continue
-
-        full_text = "\n\n".join(b.text for b in text_blocks)
-        listings = _parse_job_listings_from_text(full_text)
-        print(f"    [turn {turn}] parsed {len(listings)} listings from response")
-        return listings
+    prompt = (
+        f"Search LinkedIn for job listings matching this query: '{query}'. "
+        f"Find up to {max_results} real job postings. "
+        "For each listing return: the job title, company name, location, salary (or 'Not listed'), "
+        "a brief description of the role and requirements, and the full LinkedIn job URL. "
+        "Format each listing as:\n"
+        "N. [Title] at [Company]\n"
+        "URL: [linkedin url]\n"
+        "Location: [location]\n"
+        "Salary: [salary or Not listed]\n"
+        "Description: [brief description]\n"
+    )
+    full_text = _claude_cli(prompt)
+    listings = _parse_job_listings_from_text(full_text)
+    print(f"    parsed {len(listings)} listings from response")
+    return listings
 
 
 def generate_report(
@@ -319,18 +269,16 @@ def main(reports_dir=None, cache_dir=None) -> Path:
     cache_file = _cache_path(cache_dir)
     cache = _load_cache(cache_file)
     cached_searches = sum(1 for q in queries if q in cache["searches"])
-    print(f"Model: {_MODEL}")
+    print(f"Runner: claude CLI")
     print(f"Cache: {cache_file} ({cached_searches}/{len(queries)} queries cached, {len(cache['evaluations'])} evaluations cached)")
     print()
 
     all_jobs: list[JobListing] = []
-    for i, query in enumerate(queries):
+    for query in queries:
         if query in cache["searches"]:
             jobs = [_job_from_dict(d) for d in cache["searches"][query]]
             print(f"Searching: {query} (cached, {len(jobs)} listings)")
         else:
-            if i > 0:
-                time.sleep(20)
             print(f"Searching: {query}")
             jobs = search_linkedin_jobs(query, max_results=max_per_query)
             cache["searches"][query] = [_job_to_dict(j) for j in jobs]
