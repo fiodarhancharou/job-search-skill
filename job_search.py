@@ -107,6 +107,7 @@ def evaluate_job(
         data = json.loads(stripped)
     except json.JSONDecodeError as e:
         raise ValueError(f"Evaluation response was not valid JSON for {job.url}: {e}\nResponse: {text[:200]}") from e
+    print(f"    → {data['tier']} | required={len(data.get('matched_required', []))} | preferred={len(data.get('matched_preferred', []))} | deal-breakers={len(data.get('deal_breakers_hit', []))}")
 
     return EvaluationResult(
         job=job,
@@ -185,7 +186,10 @@ def search_linkedin_jobs(query: str, max_results: int = 10) -> list[JobListing]:
         }
     ]
 
+    turn = 0
     while True:
+        turn += 1
+        print(f"    [turn {turn}] calling API…")
         response = _messages_create_with_retry(
             client,
             model=_MODEL,
@@ -193,22 +197,28 @@ def search_linkedin_jobs(query: str, max_results: int = 10) -> list[JobListing]:
             tools=[{"type": "web_search_20260209", "name": "web_search"}],
             messages=messages,
         )
+        tool_uses = [b for b in response.content if b.type == "tool_use"]
+        text_blocks = [b for b in response.content if b.type == "text"]
+        print(f"    [turn {turn}] stop_reason={response.stop_reason} | tool_calls={len(tool_uses)} | text_blocks={len(text_blocks)}")
 
         if response.stop_reason == "end_turn":
-            text_blocks = [b.text for b in response.content if b.type == "text"]
-            full_text = "\n\n".join(text_blocks)
-            return _parse_job_listings_from_text(full_text)
+            full_text = "\n\n".join(b.text for b in text_blocks)
+            listings = _parse_job_listings_from_text(full_text)
+            print(f"    [turn {turn}] parsed {len(listings)} listings from response")
+            return listings
 
         if response.stop_reason == "pause_turn":
+            print(f"    [turn {turn}] web search in progress, continuing…")
             messages = messages + [
                 {"role": "assistant", "content": response.content},
                 {"role": "user", "content": "Please continue."},
             ]
             continue
 
-        text_blocks = [b.text for b in response.content if b.type == "text"]
-        full_text = "\n\n".join(text_blocks)
-        return _parse_job_listings_from_text(full_text)
+        full_text = "\n\n".join(b.text for b in text_blocks)
+        listings = _parse_job_listings_from_text(full_text)
+        print(f"    [turn {turn}] parsed {len(listings)} listings from response")
+        return listings
 
 
 def generate_report(
@@ -308,6 +318,10 @@ def main(reports_dir=None, cache_dir=None) -> Path:
 
     cache_file = _cache_path(cache_dir)
     cache = _load_cache(cache_file)
+    cached_searches = sum(1 for q in queries if q in cache["searches"])
+    print(f"Model: {_MODEL}")
+    print(f"Cache: {cache_file} ({cached_searches}/{len(queries)} queries cached, {len(cache['evaluations'])} evaluations cached)")
+    print()
 
     all_jobs: list[JobListing] = []
     for i, query in enumerate(queries):
@@ -331,6 +345,7 @@ def main(reports_dir=None, cache_dir=None) -> Path:
             seen_urls.add(job.url)
             unique_jobs.append(job)
 
+    print(f"\n{len(unique_jobs)} unique listings after deduplication ({len(all_jobs) - len(unique_jobs)} duplicates removed)")
     print(f"\nEvaluating {len(unique_jobs)} unique listings...")
     results: list[EvaluationResult] = []
     for job in unique_jobs:

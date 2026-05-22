@@ -301,7 +301,7 @@ def test_main_produces_report_file(tmp_path):
 
     with patch("job_search.search_linkedin_jobs", return_value=fake_jobs) as mock_search, \
          patch("job_search.evaluate_job", return_value=fake_eval) as mock_eval:
-        report_path = main(reports_dir=tmp_path)
+        report_path = main(reports_dir=tmp_path, cache_dir=tmp_path)
 
     assert report_path.exists()
     assert mock_search.call_count >= 1
